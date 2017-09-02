@@ -479,6 +479,7 @@ void read_args(int argc, char*argv[]) {
       exit(EXIT_FAILURE);
     } else if (strcmp(argv[i], "-r") == 0) {
       reverse_dir = 1;
+      i += 1;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -503,7 +504,7 @@ void print_usage() {
   printf("-c <string>                  configuration file\n");
   printf("-l <string>                  prefix for output log files\n");
   printf("-s <integer>                 seed value\n");
-  printf("-r                           reverse direction of data transmission\n");
+  printf("-r                           transfer data client->server\n");
   printf("-h                           display usage information and quit\n");
 }
 
@@ -594,6 +595,11 @@ void read_config() {
   fanout_size = (int*)malloc(num_fanouts * sizeof(int));
   fanout_prob = (int*)malloc(num_fanouts * sizeof(int));
   fanout_prob_total = 0;
+
+  if (reverse_dir)
+    printf("Transmitting data from client to server\n");
+  else
+    printf("Transmitting data from server to client\n");
 
   // second pass: parse
   fd = fopen(config_name, "r");
@@ -753,6 +759,9 @@ void *listen_connection(void *ptr) {
         printf("failed to read: %d\n", total);
         exit(EXIT_FAILURE);
       }
+#ifdef DEBUG
+      printf("Received %d bytes from server\n", f_size);
+#endif
       /* Read finished. */
     } else {
       /* Send f_size bytes */
@@ -761,6 +770,11 @@ void *listen_connection(void *ptr) {
         printf("failed to write: %d\n", total);
         exit(EXIT_FAILURE);
       }
+#ifdef DEBUG
+      else {
+        printf("Wrote %d bytes to server\n", total);
+      }
+#endif
     }
     gettimeofday(&stop_time[f_index], NULL);
 

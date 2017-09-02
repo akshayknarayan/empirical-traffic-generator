@@ -125,15 +125,22 @@ void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
       if (write_exact(sockfd, flowbuf, f_size, MAX_WRITE, true)
           != f_size)
         break;
+#ifdef DEBUG
+      else
+        printf("Sent %d bytes to client\n", f_size);
+#endif
     } else {
       /* receive flow of size f_size bytes */
+      total = f_size;
       do {
-        total = f_size;
         int readsize = total;
         if (readsize > READBUF_SIZE)
           readsize = READBUF_SIZE;
 
         n = read(sockfd, readbuf, readsize);
+ #ifdef DEBUG
+        printf("Partial receive %d bytes from client; total %d\n", n, total);
+ #endif
 
         total -= n;
 
@@ -143,6 +150,11 @@ void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
         printf("failed to read: %d\n", total);
         break;
       }
+#ifdef DEBUG
+      else {
+        printf("Received %d bytes from client\n", f_size);
+      }
+#endif
       /* Read finished. */
     }
   }
@@ -170,6 +182,7 @@ void read_args(int argc, char*argv[]) {
       exit(EXIT_FAILURE);
     } else if (strcmp(argv[i], "-r") == 0) {
       reverse_dir = 1;
+      i += 1;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -185,6 +198,6 @@ void print_usage() {
   printf("usage: server [options]\n");
   printf("options:\n");
   printf("-p <value>                 port number (default 5000)\n");
-  printf("-r                         reverse direction of data transmission\n");
+  printf("-r                         transfer data client->server\n");
   printf("-h                         display usage information and quit\n");
 }
