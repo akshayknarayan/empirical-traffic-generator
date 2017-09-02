@@ -15,6 +15,7 @@
 /* Global variables */
 int serverPort;
 char flowbuf[MAX_WRITE];
+int reverse_dir;
 
 int main (int argc, char *argv[]) {
   int listenfd;
@@ -88,9 +89,12 @@ int main (int argc, char *argv[]) {
 void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
   uint f_index;
   uint f_size;
+  int total;
+  int n;
   uint meta_data_size = 2 * sizeof(uint);
   char buf[16]; /* buffer to hold meta data */
   char clistr[INET_ADDRSTRLEN];
+  char readbuf[READBUF_SIZE];
 
   if (inet_ntop(AF_INET, &(cliaddr->sin_addr), clistr, INET_ADDRSTRLEN) == NULL)
     error("ERROR on inet_ntop");
@@ -112,14 +116,35 @@ void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
 #endif
     
     /* echo meta-data (f_index and f_size) */
-    if (write_exact(sockfd, buf, meta_data_size, MAX_WRITE, false) 
+    if (write_exact(sockfd, buf, meta_data_size, MAX_WRITE, false)
 	!= meta_data_size)
       break;
 
-    /* send flow of f_size bytes */
-    if (write_exact(sockfd, flowbuf, f_size, MAX_WRITE, true) 
-	!= f_size)
-      break;
+    if (! reverse_dir) {
+      /* send flow of f_size bytes */
+      if (write_exact(sockfd, flowbuf, f_size, MAX_WRITE, true)
+          != f_size)
+        break;
+    } else {
+      /* receive flow of size f_size bytes */
+      do {
+        total = f_size;
+        int readsize = total;
+        if (readsize > READBUF_SIZE)
+          readsize = READBUF_SIZE;
+
+        n = read(sockfd, readbuf, readsize);
+
+        total -= n;
+
+      } while (total > 0 && n > 0);
+
+      if (total > 0) {
+        printf("failed to read: %d\n", total);
+        break;
+      }
+      /* Read finished. */
+    }
   }
 
   /* close_connection */
@@ -133,6 +158,7 @@ void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
 void read_args(int argc, char*argv[]) {
   /* default values */
   serverPort = 5000;
+  reverse_dir = 0;
 
   int i = 1;
   while (i < argc) {
@@ -142,6 +168,8 @@ void read_args(int argc, char*argv[]) {
     } else if (strcmp(argv[i], "-h") == 0) {
       print_usage();
       exit(EXIT_FAILURE);
+    } else if (strcmp(argv[i], "-r") == 0) {
+      reverse_dir = 1;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -157,5 +185,6 @@ void print_usage() {
   printf("usage: server [options]\n");
   printf("options:\n");
   printf("-p <value>                 port number (default 5000)\n");
-  printf("-h                           display usage information and quit\n");
+  printf("-r                         reverse direction of data transmission\n");
+  printf("-h                         display usage information and quit\n");
 }

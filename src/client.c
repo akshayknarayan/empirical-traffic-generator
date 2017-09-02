@@ -27,6 +27,7 @@
 #include <pthread.h>
 //#include <sys/fcntl.h> 
 #include "client.h"
+#include "common.h"
 
 
 // command line arguments
@@ -79,6 +80,11 @@ FILE *fd_log;
 FILE *fd_it;
         
 int client_num;
+
+// direction of data transmission
+#define MAX_WRITE 104857600  // 100MB
+int reverse_dir;
+char flowbuf[MAX_WRITE];
           
 int main (int argc, char *argv[]) {
 
@@ -453,6 +459,7 @@ void read_args(int argc, char*argv[]) {
   strcpy(logIteration_name, "log");
 
   client_num = 0;
+  reverse_dir = 0;
 
   int i = 1;
   while (i < argc) {
@@ -470,6 +477,8 @@ void read_args(int argc, char*argv[]) {
     } else if (strcmp(argv[i], "-h") == 0) {
       print_usage();
       exit(EXIT_FAILURE);
+    } else if (strcmp(argv[i], "-r") == 0) {
+      reverse_dir = 1;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -494,6 +503,7 @@ void print_usage() {
   printf("-c <string>                  configuration file\n");
   printf("-l <string>                  prefix for output log files\n");
   printf("-s <integer>                 seed value\n");
+  printf("-r                           reverse direction of data transmission\n");
   printf("-h                           display usage information and quit\n");
 }
 
@@ -726,20 +736,31 @@ void *listen_connection(void *ptr) {
 
     total = f_size;
 
-    do {
-      int readsize = total;
-      if (readsize > READBUF_SIZE)
-	readsize = READBUF_SIZE;
+    if (! reverse_dir) {
+      /* Read f_size bytes */
+      do {
+        int readsize = total;
+        if (readsize > READBUF_SIZE)
+          readsize = READBUF_SIZE;
 
-      n = read(sock, buf, readsize);
+        n = read(sock, buf, readsize);
             
-      total -= n;
+        total -= n;
 
-    } while (total > 0 && n > 0);
+      } while (total > 0 && n > 0);
 
-    if (total > 0) {
-      printf("failed to read: %d\n", total);
-      exit(EXIT_FAILURE);
+      if (total > 0) {
+        printf("failed to read: %d\n", total);
+        exit(EXIT_FAILURE);
+      }
+      /* Read finished. */
+    } else {
+      /* Send f_size bytes */
+      if (write_exact(sock, flowbuf, total, MAX_WRITE, true)
+          != f_size) {
+        printf("failed to write: %d\n", total);
+        exit(EXIT_FAILURE);
+      }
     }
     gettimeofday(&stop_time[f_index], NULL);
 
@@ -752,10 +773,10 @@ void *listen_connection(void *ptr) {
       pthread_mutex_lock(&inc_lock);
       req_file_count--;
       if (req_file_count == 0) {
-	req_index++;
-	if (req_index < iter) {
-	  run_iteration(req_index);
-	}
+        req_index++;
+        if (req_index < iter) {
+          run_iteration(req_index);
+        }
       }
       pthread_mutex_unlock(&inc_lock);
     }

@@ -2,6 +2,7 @@
 #define __server_h
 
 //#define DEBUG
+#define READBUF_SIZE 1048576
 
 /* prototypes */ 
 void handle_connection(int sockfd, const struct sockaddr_in *cliaddr);
