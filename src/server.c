@@ -16,6 +16,7 @@
 int serverPort;
 char flowbuf[MAX_WRITE];
 int reverse_dir;
+char tcp_congestion_name[80];
 
 int main (int argc, char *argv[]) {
   int listenfd;
@@ -36,6 +37,8 @@ int main (int argc, char *argv[]) {
     error("ERROR setting SO_REUSERADDR option");
   if (setsockopt(listenfd, IPPROTO_TCP, TCP_NODELAY, &sock_opt, sizeof(sock_opt)) < 0)
     error("ERROR setting TCP_NODELAY option");
+  if (setsockopt(listenfd, IPPROTO_TCP, TCP_CONGESTION, tcp_congestion_name, 80) < 0)
+    error("ERROR setting TCP_CONGESTION option");
 
   memset(&servaddr, 0, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
@@ -171,6 +174,7 @@ void read_args(int argc, char*argv[]) {
   /* default values */
   serverPort = 5000;
   reverse_dir = 0;
+  strcpy(tcp_congestion_name, "reno");
 
   int i = 1;
   while (i < argc) {
@@ -183,6 +187,9 @@ void read_args(int argc, char*argv[]) {
     } else if (strcmp(argv[i], "-r") == 0) {
       reverse_dir = 1;
       i += 1;
+    } else if (strcmp(argv[i], "-t") == 0) {
+      strcpy(tcp_congestion_name, argv[i+1]);
+      i += 2;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -199,5 +206,6 @@ void print_usage() {
   printf("options:\n");
   printf("-p <value>                 port number (default 5000)\n");
   printf("-r                         transfer data client->server\n");
+  printf("-t <string>                tcp congestion control algorithm (default reno)\n");
   printf("-h                         display usage information and quit\n");
 }

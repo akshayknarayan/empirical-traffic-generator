@@ -33,6 +33,7 @@
 // command line arguments
 int serverPort;
 char config_name[80];
+char tcp_congestion_name[80];
 char distributionFile[80];
 char logFile_name[80];
 char logIteration_name[80];
@@ -359,6 +360,10 @@ void open_connections() {
     // set socket options
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &sock_opt, sizeof(sock_opt));
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &sock_opt, sizeof(sock_opt));
+    if (setsockopt(sock, IPPROTO_TCP, TCP_CONGESTION, tcp_congestion_name, 80)<0) {
+      printf("Unable to set TCP_CONGESTION option\n");
+      exit(EXIT_FAILURE);
+    }
 
     // connect to destination server (address/port)
     memset(&servaddr, 0, sizeof(servaddr));
@@ -457,6 +462,7 @@ void read_args(int argc, char*argv[]) {
 
   strcpy(logFile_name, "log");
   strcpy(logIteration_name, "log");
+  strcpy(tcp_congestion_name, "reno");
 
   client_num = 0;
   reverse_dir = 0;
@@ -480,6 +486,9 @@ void read_args(int argc, char*argv[]) {
     } else if (strcmp(argv[i], "-r") == 0) {
       reverse_dir = 1;
       i += 1;
+    } else if (strcmp(argv[i], "-t") == 0) {
+      strcpy(tcp_congestion_name, argv[i+1]);
+      i += 2;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -504,7 +513,8 @@ void print_usage() {
   printf("-c <string>                  configuration file\n");
   printf("-l <string>                  prefix for output log files\n");
   printf("-s <integer>                 seed value\n");
-  printf("-r                           transfer data client->server\n");
+  printf("-r                           transfer data client->server (default server->client)\n");
+  printf("-t <string>                  tcp congestion control algorithm (default reno)\n");
   printf("-h                           display usage information and quit\n");
 }
 
