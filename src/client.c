@@ -74,6 +74,13 @@ int *sockets;
 // threading
 pthread_mutex_t inc_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_t *threads;
+// Per-dest condition variables to wake up client threads for data transfer.
+// Used only when data transfer is from the client->server.
+pthread_mutex_t *wake_mutexes;
+pthread_cond_t  *wake_conds;
+int *dest_req_available;
+int *dest_req_index;
+int *dest_req_fsize;
 
 int req_file_count;
 int req_index;
@@ -168,6 +175,12 @@ void cleanup() {
   free(iteration_sleep_time);
   free(stop_time);
   free(start_time);
+
+  free(wake_mutexes);
+  free(wake_conds);
+  free(dest_req_available);
+  free(dest_req_index);
+  free(dest_req_fsize);
 
   fclose(fd_log);
   fclose(fd_it);
@@ -336,8 +349,18 @@ void process_stats() {
 
 pthread_t *launch_threads() {
   pthread_t *threads = (pthread_t*)malloc(num_dest * sizeof(pthread_t));
+  wake_mutexes = (pthread_mutex_t*)malloc(num_dest * sizeof(pthread_mutex_t));
+  wake_conds   = (pthread_cond_t* )malloc(num_dest * sizeof(pthread_cond_t));
+  dest_req_available = (int*)malloc(num_dest * sizeof(int));
+  dest_req_index     = (int*)malloc(num_dest * sizeof(int));
+  dest_req_fsize     = (int*)malloc(num_dest * sizeof(int));
   
   for (int i = 0; i < num_dest; i++) {
+    wake_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
+    wake_conds[i]   = PTHREAD_COND_INITIALIZER;
+    dest_req_available[i] = 0;
+    dest_req_index[i]     = -1;
+    dest_req_fsize[i]     = -1;
     int *l_index = (int*)malloc(sizeof(int));
     *l_index = i;
     pthread_create(&threads[i], NULL, listen_connection, l_index);
@@ -666,9 +689,48 @@ void read_config() {
   expRV = new ExponentialRandomVariable(period, client_num*133);
 }
 
+// Helper for writing index and file size into socket
+void write_sock_index_size(int sock, uint index, uint size) {
+  char buf[30];
+  memcpy(buf, &index, sizeof(uint));
+  memcpy(buf + sizeof(uint), &size, sizeof(uint));
+  int n = write(sock, buf, 2 * sizeof(uint));
+  if (n < 0) {
+    printf("error in request write: %s\n", strerror(errno));
+    exit(EXIT_FAILURE);
+  }
+}
+
+// Helper for reading index and file size from socket
+void read_sock_index_size(int sock, uint *index, uint *size) {
+  int total;
+  int meta_read_size = 2 * sizeof(uint);
+  int n;
+  char buf[READBUF_SIZE];
+
+  total = 0;
+  while (total < meta_read_size) {
+    char readbuf[50];
+
+    n = read(sock, readbuf, meta_read_size - total);
+    if (n < 0) {
+      printf("error in meta-data read: %s\n", strerror(errno));
+      exit(EXIT_FAILURE);
+    }
+
+    memcpy(buf + total, readbuf, n);
+    total += n;
+  }
+  if (total != meta_read_size) {
+    printf("Read meta data size is incorrect!\n");
+    exit(EXIT_FAILURE);
+  }
+    
+  memcpy(index, buf, sizeof(int));
+  memcpy(size, buf + sizeof(int), sizeof(int));
+}
 
 void run_iteration(int it) {
-  char buf[30];
    
   if (period < 0) {
     req_file_count = iteration_fanout[it];
@@ -686,16 +748,29 @@ void run_iteration(int it) {
   for (int j = 0; j < iteration_fanout[it]; j++) {
     //printf("Iteration: %d, Reqeust: %d..\n", i, j);
     uint index = it * num_dest + j;
-    
-    memcpy(buf, &index, sizeof(uint));
-    memcpy(buf + sizeof(uint), &iteration_file_size[index], sizeof(uint));    
-    
-    gettimeofday(&start_time[index], NULL);
-    
-    int n = write(sockets[iteration_destination[index]], buf, 2 * sizeof(uint));
-    if (n < 0) {
-      printf("error in request write: %s\n", strerror(errno)); 
-      exit(EXIT_FAILURE);
+
+    if (! reverse_dir) {
+      // Server will echo written metadata to the listening thread, unblocking it.
+      write_sock_index_size(sockets[iteration_destination[index]],
+                              index,
+                              iteration_file_size[index]);
+      gettimeofday(&start_time[index], NULL);
+    } else {
+      // Unblock the listening thread directly since a request must be sent now
+      int dest = iteration_destination[index];
+      int f_size = iteration_file_size[index];
+      pthread_mutex_lock(&wake_mutexes[dest]);
+      while (dest_req_available[dest] != 0) {
+        printf("Head-of-line blocking :(\n");
+        printf("Server %d index %d size %d\n", dest, index, f_size);
+        pthread_cond_wait(&wake_conds[dest], &wake_mutexes[dest]);
+      }
+      gettimeofday(&start_time[index], NULL);
+      dest_req_available[dest]++;
+      dest_req_index[dest] = index;
+      dest_req_fsize[dest] = f_size;
+      pthread_cond_signal(&wake_conds[dest]);
+      pthread_mutex_unlock(&wake_mutexes[dest]);
     }
   }
 
@@ -719,36 +794,31 @@ void *listen_connection(void *ptr) {
 
   int sock = sockets[index];
   char buf[READBUF_SIZE];
-  int meta_read_size = 2 * sizeof(int);
   uint file_count = 0;
   int n;
+
+  uint f_index;
+  uint f_size;
 
   while(file_count < dest_file_count[index]) {
     //printf("%d - wait for meta data, left: %d\n", index, (dest_file_count[index] - file_count));
     int total = 0;
-    while (total < meta_read_size) {
-      char readbuf[50];
 
-      n = read(sock, readbuf, meta_read_size - total);
-      if (n < 0) {
-	printf("error in meta-data read: %s\n", strerror(errno));
-	exit(EXIT_FAILURE);
+    if (!reverse_dir) {
+      read_sock_index_size(sock, &f_index, &f_size);
+    } else { // data transfer direction client->server
+      pthread_mutex_lock(&wake_mutexes[index]);
+      while(dest_req_available[index] == 0) {
+        pthread_cond_wait(&wake_conds[index], &wake_mutexes[index]);
       }
-
-      memcpy(buf + total, readbuf, n);
-      total += n;
+      // There is an available request to process
+      f_index = dest_req_index[index];
+      f_size  = dest_req_fsize[index];
+      // Decrement req_available here to allow another request to queue up
+      dest_req_available[index] --;
+      pthread_cond_signal(&wake_conds[index]);
+      pthread_mutex_unlock(&wake_mutexes[index]);
     }
-    if (total != meta_read_size) {
-      printf("Read meta data size is incorrect!\n");
-      exit(EXIT_FAILURE);
-    }
-    
-    uint f_index;
-    uint f_size;
-    
-    memcpy(&f_index, buf, sizeof(uint));
-    memcpy(&f_size, buf + sizeof(uint), sizeof(uint));
-    //printf("%d - File index: %u, size: %u\n", index, f_index, f_size);
 
     total = f_size;
 
@@ -774,6 +844,10 @@ void *listen_connection(void *ptr) {
 #endif
       /* Read finished. */
     } else {
+      /* In the reverse direction, writes are serialized to avoid an extra
+         round-trip time for full data transfer. */
+      /* Write metadata first */
+      write_sock_index_size(sock, f_index, f_size);
       /* Send f_size bytes */
       if (write_exact(sock, flowbuf, total, MAX_WRITE, true)
           != f_size) {
@@ -785,6 +859,12 @@ void *listen_connection(void *ptr) {
         printf("Wrote %d bytes to server\n", total);
       }
 #endif
+      // Read from server to ensure size is echoed correctly
+      uint check_f_index;
+      uint check_f_size;
+      read_sock_index_size(sock, &check_f_index, &check_f_size);
+      assert(f_size  == check_f_size);
+      assert(f_index == check_f_index);
     }
     gettimeofday(&stop_time[f_index], NULL);
 

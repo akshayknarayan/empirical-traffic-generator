@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-c -Wall -O2 -pthread -MMD -MP
+CFLAGS=-c -Wall -O2 -pthread -MMD -MP -std=c++11
 LDFLAGS=-pthread
 COMMON_OBJS=common.o
 SERVER_OBJS=server.o
