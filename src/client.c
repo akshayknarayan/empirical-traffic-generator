@@ -93,6 +93,9 @@ int client_num;
 #define MAX_WRITE 104857600  // 100MB
 int reverse_dir;
 char flowbuf[MAX_WRITE];
+
+// effectively single-threaded client
+int single_threaded;
           
 int main (int argc, char *argv[]) {
 
@@ -363,7 +366,8 @@ pthread_t *launch_threads() {
     dest_req_fsize[i]     = -1;
     int *l_index = (int*)malloc(sizeof(int));
     *l_index = i;
-    pthread_create(&threads[i], NULL, listen_connection, l_index);
+    if (! single_threaded)
+      pthread_create(&threads[i], NULL, listen_connection, l_index);
   }
 
   return threads;
@@ -489,6 +493,7 @@ void read_args(int argc, char*argv[]) {
 
   client_num = 0;
   reverse_dir = 0;
+  single_threaded = 0;
 
   int i = 1;
   while (i < argc) {
@@ -512,6 +517,9 @@ void read_args(int argc, char*argv[]) {
     } else if (strcmp(argv[i], "-t") == 0) {
       strcpy(tcp_congestion_name, argv[i+1]);
       i += 2;
+    } else if (strcmp(argv[i], "-a") == 0) {
+      single_threaded = 1;
+      i += 1;
     } else {
       printf("invalid option: %s\n", argv[i]);
       print_usage();
@@ -538,6 +546,7 @@ void print_usage() {
   printf("-s <integer>                 seed value\n");
   printf("-r                           transfer data client->server (default server->client)\n");
   printf("-t <string>                  tcp congestion control algorithm (default reno)\n");
+  printf("-a                           transfer data from client->server using a single thread\n");
   printf("-h                           display usage information and quit\n");
 }
 
@@ -758,19 +767,41 @@ void run_iteration(int it) {
     } else {
       // Unblock the listening thread directly since a request must be sent now
       int dest = iteration_destination[index];
-      int f_size = iteration_file_size[index];
-      pthread_mutex_lock(&wake_mutexes[dest]);
-      while (dest_req_available[dest] != 0) {
-        printf("Head-of-line blocking :(\n");
-        printf("Server %d index %d size %d\n", dest, index, f_size);
-        pthread_cond_wait(&wake_conds[dest], &wake_mutexes[dest]);
+      uint f_size = iteration_file_size[index];
+      uint total = f_size;
+      if (single_threaded) {
+        int sock = sockets[iteration_destination[index]];
+        gettimeofday(&start_time[index], NULL);
+        write_sock_index_size(sock, index, f_size);
+        /* Send f_size bytes */
+        if (write_exact(sock, flowbuf, total, MAX_WRITE, true)
+            != f_size) {
+          printf("failed to write: %d\n", total);
+          exit(EXIT_FAILURE);
+        }
+        // Read from server to ensure size is echoed correctly
+        uint check_f_index;
+        uint check_f_size;
+        read_sock_index_size(sock, &check_f_index, &check_f_size);
+        gettimeofday(&stop_time[index], NULL);
+        assert(f_size  == check_f_size);
+        assert(index == check_f_index);
+        if (it % 1000 == 0 && it > 0)
+          printf("Sent %d files from single-threaded client\n", it);
+      } else {
+        pthread_mutex_lock(&wake_mutexes[dest]);
+        while (dest_req_available[dest] != 0) {
+          printf("Head-of-line blocking :(\n");
+          printf("Server %d index %d size %d\n", dest, index, f_size);
+          pthread_cond_wait(&wake_conds[dest], &wake_mutexes[dest]);
+        }
+        gettimeofday(&start_time[index], NULL);
+        dest_req_available[dest]++;
+        dest_req_index[dest] = index;
+        dest_req_fsize[dest] = f_size;
+        pthread_cond_signal(&wake_conds[dest]);
+        pthread_mutex_unlock(&wake_mutexes[dest]);
       }
-      gettimeofday(&start_time[index], NULL);
-      dest_req_available[dest]++;
-      dest_req_index[dest] = index;
-      dest_req_fsize[dest] = f_size;
-      pthread_cond_signal(&wake_conds[dest]);
-      pthread_mutex_unlock(&wake_mutexes[dest]);
     }
   }
 
@@ -847,24 +878,26 @@ void *listen_connection(void *ptr) {
       /* In the reverse direction, writes are serialized to avoid an extra
          round-trip time for full data transfer. */
       /* Write metadata first */
-      write_sock_index_size(sock, f_index, f_size);
-      /* Send f_size bytes */
-      if (write_exact(sock, flowbuf, total, MAX_WRITE, true)
-          != f_size) {
-        printf("failed to write: %d\n", total);
-        exit(EXIT_FAILURE);
-      }
+      if (! single_threaded) {
+        write_sock_index_size(sock, f_index, f_size);
+        /* Send f_size bytes */
+        if (write_exact(sock, flowbuf, total, MAX_WRITE, true)
+            != f_size) {
+          printf("failed to write: %d\n", total);
+          exit(EXIT_FAILURE);
+        }
 #ifdef DEBUG
-      else {
-        printf("Wrote %d bytes to server\n", total);
-      }
+        else {
+          printf("Wrote %d bytes to server\n", total);
+        }
 #endif
-      // Read from server to ensure size is echoed correctly
-      uint check_f_index;
-      uint check_f_size;
-      read_sock_index_size(sock, &check_f_index, &check_f_size);
-      assert(f_size  == check_f_size);
-      assert(f_index == check_f_index);
+        // Read from server to ensure size is echoed correctly
+        uint check_f_index;
+        uint check_f_size;
+        read_sock_index_size(sock, &check_f_index, &check_f_size);
+        assert(f_size  == check_f_size);
+        assert(f_index == check_f_index);
+      }
     }
     gettimeofday(&stop_time[f_index], NULL);
 
