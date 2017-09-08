@@ -148,6 +148,12 @@ int main (int argc, char *argv[]) {
   return 0;
 }
 
+int interval_us(struct timeval start, struct timeval end) {
+  int diff_s  = end.tv_sec  - start.tv_sec;
+  int diff_us = end.tv_usec - start.tv_usec;
+  diff_us += diff_s * 1000000;
+  return diff_us;
+}
 
 void run_iterations() {
   if (period < 0) {
@@ -155,10 +161,32 @@ void run_iterations() {
     run_iteration(req_index);
   } 
   else {
+    struct timeval t_start;
+    struct timeval t_end;
+    int timediff_us;
+    int overtime_us;
+    overtime_us = 0;
     for (int i = 0; i < iter; i++) {
-      usleep(iteration_sleep_time[i]);
+      timediff_us = iteration_sleep_time[i];
+      if (i > 0) {
+        timediff_us -= interval_us(t_start, t_end);
+        if (timediff_us < 0) {
+#ifdef DEBUG
+          printf("Overtime past request!\n");
+#endif
+          overtime_us -= timediff_us;
+        } else {
+          usleep(timediff_us);
+        }
+      }
+      else {
+        usleep(timediff_us);
+      }
+      gettimeofday(&t_start, NULL);
       run_iteration(i);
+      gettimeofday(&t_end, NULL);
     }
+    printf("Overall wait time: %d us\n", overtime_us);
   }
 }
 
