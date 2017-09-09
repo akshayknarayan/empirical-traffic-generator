@@ -133,7 +133,7 @@ int main (int argc, char *argv[]) {
   run_iterations();
 
   // check for completion of all threads
-  for (int i = 0; i < num_dest; i++) {
+  for (int i = 0; i < num_dest - num_persistent_servers; i++) {
     pthread_join(threads[i], NULL);
   }
   printf("All iterations completed. Processing statistics...\n");
@@ -248,7 +248,8 @@ void process_stats() {
   struct timeval *overall_stop = NULL;
   uint64_t overall_bytes = 0;
 
-  for (int i = 0; i < iter; i++) {
+  printf("Statistics are only reported for non-backlogged transfers.\n");
+  for (int i = num_persistent_servers; i < iter; i++) {
     struct timeval *i_start = NULL;
     struct timeval *i_stop = NULL;
     
