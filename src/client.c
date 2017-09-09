@@ -277,6 +277,11 @@ void process_stats() {
       int f_sec = stop_time[index].tv_sec - start_time[index].tv_sec;
       int f_usec = stop_time[index].tv_usec - start_time[index].tv_usec;      
       f_usec += (f_sec * 1000000);
+      if (f_usec < 0) {
+        printf("request index %d start: %ld s %ld us stop: %ld s %ld us\n",
+               index, start_time[index].tv_sec, start_time[index].tv_usec,
+               stop_time[index].tv_sec, stop_time[index].tv_usec);
+      }
       assert(f_usec >= 0);
       
       if ((uint)f_usec > max_file_usec) 
@@ -818,10 +823,11 @@ void run_iteration(int it) {
 
     if (! reverse_dir) {
       // Server will echo written metadata to the listening thread, unblocking it.
+      gettimeofday(&start_time[index], NULL);
       write_sock_index_size(sockets[iteration_destination[index]],
                               index,
                               iteration_file_size[index]);
-      gettimeofday(&start_time[index], NULL);
+
     } else {
       // Unblock the listening thread directly since a request must be sent now
       int dest = iteration_destination[index];
