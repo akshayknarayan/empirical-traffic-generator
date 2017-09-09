@@ -132,6 +132,12 @@ outputs the actual throughtput upon termination.
 num_reqs 1500
 ```
 
+* **persistent_servers:** the total number of servers which are persistently
+    backlogged in their data transfer to the client. The default is 0. 
+```
+persistent_servers 1
+```
+If this value is `k > 0`, the last `k` servers specified in the config file send data to the client as fast as possible.
 
 ## Output
 
