@@ -40,6 +40,7 @@ char logIteration_name[80];
 
 // input parameters
 int num_dest;
+int num_persistent_servers;
 int *dest_port;
 char (*dest_addr)[20];
 
@@ -394,7 +395,7 @@ pthread_t *launch_threads() {
     dest_req_fsize[i]     = -1;
     int *l_index = (int*)malloc(sizeof(int));
     *l_index = i;
-    if (! single_threaded)
+    if ((! reverse_dir) || (! single_threaded))
       pthread_create(&threads[i], NULL, listen_connection, l_index);
   }
 
@@ -455,8 +456,21 @@ void set_iteration_variables() {
   for (int i = 0; i < num_dest; i++) {
     temp_list[i] = i;
   }
-  
-  for (int i = 0; i < iter; i++) {
+
+  /* Schedule persistent transfers */
+  for (int i = 0; i < num_persistent_servers; i++) {
+    iteration_fanout[i] = 1;
+    iteration_sleep_time[i] = 1;
+    /* signal backlogged transfer to the server  */
+    iteration_file_size[i * num_dest] = 0;
+    /* Transfer to the i'th persistent server */
+    int dest = num_dest - num_persistent_servers + i;
+    iteration_destination[i * num_dest] = dest;
+    dest_file_count[dest]++;
+  }
+
+  /* Schedule small requests */
+  for (int i = num_persistent_servers; i < iter; i++) {
     // generate fanout size
     int val = rand() % fanout_prob_total;
     for (int j = 0; j < num_fanouts; j++) {
@@ -482,7 +496,7 @@ void set_iteration_variables() {
     iteration_sleep_time[i] = sltime;
 
     memcpy(dest_list, temp_list, num_dest * sizeof(int));
-    int dest_count = num_dest;
+    int dest_count = num_dest - num_persistent_servers;
     
     // generate file sizes and destination
     uint64_t reqSize = empRV->value();
@@ -599,6 +613,7 @@ void read_config() {
   int num_fsize_dist = 0;
   int num_load = 0;
   int num_it = 0;
+  num_persistent_servers = 0;
   num_fanouts = 0;
   while (fgets(line, 256, fd)) 
   {
@@ -606,6 +621,8 @@ void read_config() {
     sscanf(line, "%s", key);
     if (!strcmp(key, "server"))
       num_servers++;
+    else if (!strcmp(key, "persistent_servers"))
+      num_persistent_servers++;
     else if (!strcmp(key, "fanout"))
       num_fanouts++;
     else if (!strcmp(key, "req_size_dist")) {
@@ -652,6 +669,11 @@ void read_config() {
     fprintf(stderr, "config file formatting error: missing num_reqs\n");
     exit(EXIT_FAILURE);
   }
+  if (num_persistent_servers >= num_servers) {
+    fprintf(stderr, "config file error: # persistent servers must be smaller"
+            " than the total # servers!\n");
+    exit(EXIT_FAILURE);
+  }
 
   // initialize
   printf("===\nNumber of servers: %d\n", num_servers);
@@ -684,6 +706,11 @@ void read_config() {
       dest_file_count[num_servers] = 0;
       printf("Server[%d]: %s, Port:%d\n", num_servers, dest_addr[num_servers], dest_port[num_servers]);
       num_servers++;
+    }
+
+    if (!strcmp(key, "persistent_servers")) {
+      sscanf(line, "%s %d\n", key, &num_persistent_servers);
+      printf("# persistent servers: %d\n", num_persistent_servers);
     }
 
     if (!strcmp(key, "fanout")) {
@@ -724,6 +751,8 @@ void read_config() {
   }
   printf("Average flow inter-arrival period: %dus\n===\n", period);
   expRV = new ExponentialRandomVariable(period, client_num*133);
+  /* If there are persistent connections, add that to the # requests. */
+  iter += num_persistent_servers;
 }
 
 // Helper for writing index and file size into socket
@@ -883,16 +912,21 @@ void *listen_connection(void *ptr) {
 
     if (! reverse_dir) {
       /* Read f_size bytes */
-      do {
-        int readsize = total;
-        if (readsize > READBUF_SIZE)
-          readsize = READBUF_SIZE;
+      if (total > 0) {
+        do {
+          int readsize = total;
+          if (readsize > READBUF_SIZE)
+            readsize = READBUF_SIZE;
 
-        n = read(sock, buf, readsize);
-            
-        total -= n;
+          n = read(sock, buf, readsize);
+          if (n < 0) {
+            printf("failed to read: %d %d\n", n, total);
+            exit(EXIT_FAILURE);
+          }
 
-      } while (total > 0 && n > 0);
+          total -= n;
+
+        } while (total > 0 && n > 0);
 
       if (total > 0) {
         printf("failed to read: %d\n", total);
@@ -902,6 +936,17 @@ void *listen_connection(void *ptr) {
       printf("Received %d bytes from server\n", f_size);
 #endif
       /* Read finished. */
+      } else {
+        /* Read indefinitely */
+        n = 0;
+        do {
+          n = read(sock, buf, READBUF_SIZE);
+        } while (n > 0);
+        if (n < 0) {
+          printf("Error in reading indefinitely!\n");
+          exit(EXIT_FAILURE);
+        }
+      }
     } else {
       /* In the reverse direction, writes are serialized to avoid an extra
          round-trip time for full data transfer. */

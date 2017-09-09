@@ -73,6 +73,19 @@ unsigned int write_exact(int fd, const char *buf, size_t count,
   return bytes_written;
 }
 
+unsigned int write_forever(int fd, const char *dummy_buf,
+                           size_t max_per_write) {
+  int n;
+  do {
+    n = write(fd, dummy_buf, max_per_write);
+    if (n < 0) {
+      perror("write_forever(): ERROR in write");
+      return -1;
+    }
+  } while (n > 0);
+  return 0;
+}
+
 /* 
  * Output error message and exit.
  */

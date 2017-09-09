@@ -125,13 +125,24 @@ void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
 
     if (! reverse_dir) {
       /* send flow of f_size bytes */
-      if (write_exact(sockfd, flowbuf, f_size, MAX_WRITE, true)
-          != f_size)
-        break;
+      if (f_size == 0) {
+        /* This is the client's way of signaling a persistently backlogged
+           socket. Write data as fast as possible */
+        int n = write_forever(sockfd, flowbuf, MAX_WRITE);
+        if (n < 0) {
+          printf("Server: error in writing to persistently backlogged "
+                 "socket\n");
+          exit(EXIT_FAILURE);
+        }
+      } else {
+        if (write_exact(sockfd, flowbuf, f_size, MAX_WRITE, true)
+            != f_size)
+          break;
 #ifdef DEBUG
-      else
-        printf("Sent %d bytes to client\n", f_size);
+        else
+          printf("Sent %d bytes to client\n", f_size);
 #endif
+      }
     } else {
       /* receive flow of size f_size bytes */
       total = f_size;
