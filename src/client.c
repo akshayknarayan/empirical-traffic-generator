@@ -187,7 +187,10 @@ void run_iterations() {
       run_iteration(i);
       gettimeofday(&t_end, NULL);
     }
-    printf("Overall wait time: %d us\n", overtime_us);
+    float overtime_per_req_us = (float)overtime_us / (float)iter;
+    printf("===\nOverall head-of-line waiting time: "
+           "%d us (per request %f)\n===\n",
+           overtime_us, overtime_per_req_us);
   }
 }
 
@@ -689,10 +692,12 @@ void read_config() {
   sockets = (int*)malloc(num_dest * sizeof(int));
   dest_file_count = (uint*)malloc(num_dest * sizeof(uint));
 
-  printf("Number of fanouts: %d\n===\n", num_fanouts);
+  printf("Number of fanouts: %d\n", num_fanouts);
   fanout_size = (int*)malloc(num_fanouts * sizeof(int));
   fanout_prob = (int*)malloc(num_fanouts * sizeof(int));
   fanout_prob_total = 0;
+
+  printf("Number of backlogged servers: %d\n===\n", num_persistent_servers);
 
   if (reverse_dir)
     printf("Transmitting data from client to server\n");
