@@ -198,7 +198,9 @@ server 100.64.0.1 5196
 server 100.64.0.1 5197
 server 100.64.0.1 5198
 server 100.64.0.1 5199
+server 100.64.0.1 5200
 req_size_dist CAIDA_CDF
 fanout 1 100
-load 36Mbps
-num_reqs 150000
+load 48Mbps
+num_reqs 100000
+persistent_servers 1 
