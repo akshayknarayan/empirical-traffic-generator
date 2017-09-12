@@ -6,4 +6,4 @@ f.close()
 lines = lines[0].strip()
 for line in lines.split():
     #print line
-    subprocess.Popen("kill -9 "+line,shell=True)
+    subprocess.Popen("sudo kill -9 "+line,shell=True)
