@@ -68,6 +68,7 @@ int *iteration_sleep_time;
 struct timeval *start_time;
 struct timeval *stop_time;
 uint *dest_file_count;
+uint64_t *backlogged_bytes;
 
 // sockets for communicating with each destination
 int *sockets;            
@@ -210,6 +211,7 @@ void cleanup() {
   free(iteration_sleep_time);
   free(stop_time);
   free(start_time);
+  free(backlogged_bytes);
 
   free(wake_mutexes);
   free(wake_conds);
@@ -251,7 +253,7 @@ void process_stats() {
   struct timeval *overall_stop = NULL;
   uint64_t overall_bytes = 0;
 
-  printf("Statistics are only reported for non-backlogged transfers.\n");
+  printf("Request completion stats are only reported for non-backlogged transfers.\n");
   for (int i = num_persistent_servers; i < iter; i++) {
     struct timeval *i_start = NULL;
     struct timeval *i_stop = NULL;
@@ -386,6 +388,16 @@ void process_stats() {
   printf("Avg iteration: %u usec\n", avg_iter_usec / iter);
   printf("Min iteration: %u usec\n", min_iter_usec);
 
+  printf("===\n");
+
+  float avg_tput = 0;
+  for (int i = 0; i < num_persistent_servers; i++) {
+    printf("Persistent thread %d transferred approx %llu bytes\n", i, backlogged_bytes[i]);
+    avg_tput += (float)backlogged_bytes[i]*8.0/total_usec;
+  }
+  printf("total experiment time: %lld us\n", total_usec);
+  avg_tput /= num_persistent_servers;
+  printf("Average throughput for backlogged requests: %fMbps\n", avg_tput);
 }
 
 pthread_t *launch_threads() {
@@ -458,6 +470,7 @@ void set_iteration_variables() {
   iteration_sleep_time = (int*)malloc(iter * sizeof(int));
   stop_time = (struct timeval*)malloc(iter * num_dest * sizeof(struct timeval));
   start_time = (struct timeval*)malloc(iter * num_dest * sizeof(struct timeval));
+  backlogged_bytes = (uint64_t*)malloc(num_persistent_servers * sizeof(uint64_t));
 
   int *temp_list = (int*)malloc(num_dest * sizeof(int));
   int *dest_list = (int*)malloc(num_dest * sizeof(int));
@@ -951,7 +964,10 @@ void *listen_connection(void *ptr) {
       } else {
         /* Read indefinitely */
         n = 0;
+        int b_index = index - num_dest + num_persistent_servers;
+        backlogged_bytes[b_index] = 0;
         do {
+          backlogged_bytes[b_index] += n;
           n = read(sock, buf, READBUF_SIZE);
         } while (n > 0);
         if (n < 0) {
