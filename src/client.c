@@ -298,7 +298,7 @@ void process_stats() {
       avg_file_usec += f_usec;
       file_count++;
       
-      write_logFile("File",iteration_file_size[index], f_usec);
+      write_logFile("File",iteration_file_size[index], f_usec, start_time[index].tv_sec*1000+start_time[index].tv_usec/1000);
 
 #ifdef DEBUG    
       printf("File: %d,%d, size: %u duration: %u usec\n", i, j, iteration_file_size[index], f_usec);
@@ -351,7 +351,7 @@ void process_stats() {
     f_avg_iter_usec[f_index] += i_usec;
     f_iter_count[f_index]++;
 
-    write_logFile("Iteration", iteration_file_size[i*num_dest]*iteration_fanout[i], i_usec);
+    write_logFile("Iteration", iteration_file_size[i*num_dest]*iteration_fanout[i], i_usec, i_start->tv_sec*1000+i_start->tv_usec/1000);
 
 #ifdef DEBUG    
     printf("Iteration: %d, total size: %u duration: %u usec\n", i, iteration_file_size[i*num_dest]*iteration_fanout[i], i_usec);
@@ -614,12 +614,12 @@ void print_usage() {
   printf("-h                           display usage information and quit\n");
 }
 
-void write_logFile(const char *type,int  size, int duration){
+void write_logFile(const char *type,int  size, int duration, int start_time){
   if (strcmp(type,"File") == 0){
-    fprintf(fd_log, "Size:%u, Duration(usec):%u\n",size,duration); 
+    fprintf(fd_log, "Size:%u, Duration(usec):%u, StartTime(ms):%u\n",size,duration, start_time); 
   }
   if (strcmp(type,"Iteration") == 0){
-    fprintf(fd_it, "Size:%u, Duration(usec):%u\n",size,duration);
+    fprintf(fd_it, "Size:%u, Duration(usec):%u, StartTime(ms):%u\n",size,duration, start_time);
   }            
 }
 

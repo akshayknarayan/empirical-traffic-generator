@@ -33,6 +33,6 @@ pthread_t *launch_threads();
 void process_stats();
 void run_iterations();
 void cleanup();
-void write_logFile(const char * type, int size, int duration);
+void write_logFile(const char * type, int size, int duration, int start_time);
 
 #endif
