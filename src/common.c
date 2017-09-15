@@ -3,10 +3,6 @@
 #include <errno.h>
 #include "common.h"
 
-/* Instrumentation for throughput measurements on backlogged connections */
-struct timeval start_time;
-struct timeval write_time;
-
 /*
  * This function attemps to read exactly count bytes from file descriptor fd
  * into buffer starting at buf. It repeatedly calls read() until either: 
@@ -89,19 +85,34 @@ uint64_t interval_us(struct timeval start, struct timeval end) {
 }
 
 unsigned int write_forever(int fd, const char *dummy_buf,
-                           size_t max_per_write) {
+                           size_t max_per_write, const char* log) {
+  FILE* fd_log = fopen(log, "w");
+  if (fd_log < 0) {
+    printf("Cannot open server-side log!\n");
+    fd_log = stdout;
+  }
+  struct timeval expt_start_time;
+  struct timeval write_start_time;
+  struct timeval write_interval_time;
   int n;
-  gettimeofday(&start_time, NULL);
+  uint64_t cumulative_bytes = 0;
+  uint64_t diff_us;
+  gettimeofday(&expt_start_time, NULL);
   do {
+    gettimeofday(&write_start_time, NULL);
     n = write(fd, dummy_buf, max_per_write);
     if (n < 0) {
       perror("write_forever(): ERROR in write");
       return -1;
     }
-    gettimeofday(&write_time, NULL);
-    uint64_t diff_us = interval_us(start_time, write_time);
-    printf("time %d bytes %d\n", diff_us, n);
+    cumulative_bytes += n;
+    gettimeofday(&write_interval_time, NULL);
+    diff_us = interval_us(write_start_time, write_interval_time);
+    fprintf(fd_log,
+            "time %llu cumulative_bytes %llu bytes %d throughput %fMbps\n",
+            diff_us, cumulative_bytes, n, 8.0*n/diff_us);
   } while (n > 0);
+  close(fd);
   return 0;
 }
 

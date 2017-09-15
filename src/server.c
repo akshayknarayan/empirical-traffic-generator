@@ -17,6 +17,7 @@ int serverPort;
 char flowbuf[MAX_WRITE];
 int reverse_dir;
 char tcp_congestion_name[80];
+char pers_tput_log[80];
 
 int main (int argc, char *argv[]) {
   int listenfd;
@@ -128,7 +129,7 @@ void handle_connection(int sockfd, const struct sockaddr_in *cliaddr) {
       if (f_size == 0) {
         /* This is the client's way of signaling a persistently backlogged
            socket. Write data as fast as possible */
-        int n = write_forever(sockfd, flowbuf, MAX_WRITE);
+        int n = write_forever(sockfd, flowbuf, MAX_WRITE, pers_tput_log);
         if (n < 0) {
           printf("Server: error in writing to persistently backlogged "
                  "socket\n");
@@ -186,6 +187,7 @@ void read_args(int argc, char*argv[]) {
   serverPort = 5000;
   reverse_dir = 0;
   strcpy(tcp_congestion_name, "reno");
+  strcpy(pers_tput_log, "server.log");
 
   int i = 1;
   while (i < argc) {
@@ -200,6 +202,9 @@ void read_args(int argc, char*argv[]) {
       i += 1;
     } else if (strcmp(argv[i], "-t") == 0) {
       strcpy(tcp_congestion_name, argv[i+1]);
+      i += 2;
+    } else if (strcmp(argv[i], "-l") == 0) {
+      strcpy(pers_tput_log, argv[i+1]);
       i += 2;
     } else {
       printf("invalid option: %s\n", argv[i]);
@@ -218,5 +223,6 @@ void print_usage() {
   printf("-p <value>                 port number (default 5000)\n");
   printf("-r                         transfer data client->server\n");
   printf("-t <string>                tcp congestion control algorithm (default reno)\n");
+  printf("-l                         throughput log file for backlogged transfers\n");
   printf("-h                         display usage information and quit\n");
 }
