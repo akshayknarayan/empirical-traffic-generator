@@ -3,6 +3,10 @@
 #include <errno.h>
 #include "common.h"
 
+/* Instrumentation for throughput measurements on backlogged connections */
+struct timeval start_time;
+struct timeval write_time;
+
 /*
  * This function attemps to read exactly count bytes from file descriptor fd
  * into buffer starting at buf. It repeatedly calls read() until either: 
@@ -73,15 +77,30 @@ unsigned int write_exact(int fd, const char *buf, size_t count,
   return bytes_written;
 }
 
+uint64_t interval_us(struct timeval start, struct timeval end) {
+  if ((end.tv_sec < start.tv_sec) ||
+      ((end.tv_sec == start.tv_sec) && end.tv_usec < start.tv_usec)) {
+    printf("Interval finding: Bad timestamps!!");
+  }
+  uint64_t diff_s  = end.tv_sec  - start.tv_sec;
+  int diff_us = end.tv_usec - start.tv_usec;
+  uint64_t diff_result_us = (diff_s * 1000000) + diff_us;
+  return diff_result_us;
+}
+
 unsigned int write_forever(int fd, const char *dummy_buf,
                            size_t max_per_write) {
   int n;
+  gettimeofday(&start_time, NULL);
   do {
     n = write(fd, dummy_buf, max_per_write);
     if (n < 0) {
       perror("write_forever(): ERROR in write");
       return -1;
     }
+    gettimeofday(&write_time, NULL);
+    uint64_t diff_us = interval_us(start_time, write_time);
+    printf("time %d bytes %d\n", diff_us, n);
   } while (n > 0);
   return 0;
 }

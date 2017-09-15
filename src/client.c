@@ -150,13 +150,6 @@ int main (int argc, char *argv[]) {
   return 0;
 }
 
-int interval_us(struct timeval start, struct timeval end) {
-  int diff_s  = end.tv_sec  - start.tv_sec;
-  int diff_us = end.tv_usec - start.tv_usec;
-  diff_us += diff_s * 1000000;
-  return diff_us;
-}
-
 void run_iterations() {
   if (period < 0) {
     req_index = 0;
