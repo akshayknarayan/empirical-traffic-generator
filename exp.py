@@ -1,28 +1,37 @@
-import math
+#!/usr/bin/python3
+
+import argparse
+import random
+import subprocess as sh
 import sys
 import time
-import subprocess
 
-algo=[['reno'],['ccp']]
-#load=[["48Mbps","2000", "VL2_CDF"], ["48Mbps", "100000", "CAIDA_CDF"]]
-load=[["72Mbps", "100000", "CAIDA_CDF"],]
-nS = 50
+parser = argparse.ArgumentParser(description="Run empirical traffic generator experiment")
+parser.add_argument('--ip', type=str, dest='ip')
+parser.add_argument('--cdf', type=str, dest='cdf')
+parser.add_argument('--clients', type=int, dest='clients')
+parser.add_argument('--load', type=str, dest='load')
+parser.add_argument('--reqs', type=int, dest='reqs')
+parser.add_argument('--outdir', type=str, dest='outdir')
 
-for it in range(10):
-    for a in algo:
-        for l in load:
-            f = open('run-multiple-server.sh','w')
-            f.write("#!/bin/bash\n\n")
-            for i in range(nS):
-                f.write("./bin/server -t {} -p ".format(a[0])+str(5000+i)+" >> /dev/null &\n")
-            f.close()
+def server_line(ip, i):
+    return "server {} {}".format(ip, 5000 + i)
 
-            f = open('mahimahiConfig', 'w')
-            for i in range(nS):
-                f.write("server 100.64.0.1 "+str(5000+i)+"\n")
-            f.write("req_size_dist "+l[2]+"\n")
-            f.write("fanout 1 100\n")
-            f.write("load "+l[0]+"\n")
-            f.write("num_reqs "+l[1]+"\n")
-            f.close()
-            subprocess.call("bash exp-help.sh {}-{}-{}-{}-{}".format('reno-'+a[0] if 'ccp' in a[0] else a[0], it, l[0], l[1], l[2]), shell=True)
+args = parser.parse_args()
+with open('client.conf', 'w') as f:
+    for i in range(args.clients):
+        f.write(server_line(args.ip, i) + '\n')
+    f.write('req_size_dist {}\n'.format(args.cdf))
+    f.write('fanout 1 100\n')
+    f.write('load {}\n'.format(args.load))
+    f.write('num_reqs {}\n'.format(args.reqs))
+
+sh.Popen('ssh {} "cd ~/empirical-traffic-gen && ./run-servers.py {} &"'.format(args.ip, args.clients), shell=True)
+print('started servers')
+time.sleep(2)
+print('starting clients')
+sh.run('./bin/client -c client.conf -l {} -s {}'.format(args.outdir, int(random.random() * 1000)), shell=True)
+
+print('done')
+sh.run('ssh {} "killall server"'.format(args.ip), shell=True)
+>>>>>>> 13931b3... experiment script

@@ -1,2 +1,9 @@
 *~
 *CAIDA*
+bin
+*.o
+*.d
+src/client
+src/server
+*.out
+*.conf
