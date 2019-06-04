@@ -1,52 +1,9 @@
 #!/bin/bash
 
-./bin/server -t reno -p 5000 >> /dev/null &
-./bin/server -t reno -p 5001 >> /dev/null &
-./bin/server -t reno -p 5002 >> /dev/null &
-./bin/server -t reno -p 5003 >> /dev/null &
-./bin/server -t reno -p 5004 >> /dev/null &
-./bin/server -t reno -p 5005 >> /dev/null &
-./bin/server -t reno -p 5006 >> /dev/null &
-./bin/server -t reno -p 5007 >> /dev/null &
-./bin/server -t reno -p 5008 >> /dev/null &
-./bin/server -t reno -p 5009 >> /dev/null &
-./bin/server -t reno -p 5010 >> /dev/null &
-./bin/server -t reno -p 5011 >> /dev/null &
-./bin/server -t reno -p 5012 >> /dev/null &
-./bin/server -t reno -p 5013 >> /dev/null &
-./bin/server -t reno -p 5014 >> /dev/null &
-./bin/server -t reno -p 5015 >> /dev/null &
-./bin/server -t reno -p 5016 >> /dev/null &
-./bin/server -t reno -p 5017 >> /dev/null &
-./bin/server -t reno -p 5018 >> /dev/null &
-./bin/server -t reno -p 5019 >> /dev/null &
-./bin/server -t reno -p 5020 >> /dev/null &
-./bin/server -t reno -p 5021 >> /dev/null &
-./bin/server -t reno -p 5022 >> /dev/null &
-./bin/server -t reno -p 5023 >> /dev/null &
-./bin/server -t reno -p 5024 >> /dev/null &
-./bin/server -t reno -p 5025 >> /dev/null &
-./bin/server -t reno -p 5026 >> /dev/null &
-./bin/server -t reno -p 5027 >> /dev/null &
-./bin/server -t reno -p 5028 >> /dev/null &
-./bin/server -t reno -p 5029 >> /dev/null &
-./bin/server -t reno -p 5030 >> /dev/null &
-./bin/server -t reno -p 5031 >> /dev/null &
-./bin/server -t reno -p 5032 >> /dev/null &
-./bin/server -t reno -p 5033 >> /dev/null &
-./bin/server -t reno -p 5034 >> /dev/null &
-./bin/server -t reno -p 5035 >> /dev/null &
-./bin/server -t reno -p 5036 >> /dev/null &
-./bin/server -t reno -p 5037 >> /dev/null &
-./bin/server -t reno -p 5038 >> /dev/null &
-./bin/server -t reno -p 5039 >> /dev/null &
-./bin/server -t reno -p 5040 >> /dev/null &
-./bin/server -t reno -p 5041 >> /dev/null &
-./bin/server -t reno -p 5042 >> /dev/null &
-./bin/server -t reno -p 5043 >> /dev/null &
-./bin/server -t reno -p 5044 >> /dev/null &
-./bin/server -t reno -p 5045 >> /dev/null &
-./bin/server -t reno -p 5046 >> /dev/null &
-./bin/server -t reno -p 5047 >> /dev/null &
-./bin/server -t reno -p 5048 >> /dev/null &
-./bin/server -t reno -p 5049 >> /dev/null &
+# $1 : start port
+# $2 : num servers
+# $3 : cong alg
+
+for i in `seq 0 $2`; do
+    ./empiricial-traffic-gen/bin/server -t $3 -p $(($1 + $i)) >> /dev/null &
+done
