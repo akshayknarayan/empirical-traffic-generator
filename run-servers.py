@@ -4,7 +4,11 @@ import shlex
 import sys
 import subprocess as sh
 
-procs = [sh.Popen(shlex.split('./bin/server -t reno -p {}'.format(5000 + i))) for i in range(int(sys.argv[1]))]
+start_port = int(sys.argv[1])
+num_procs = int(sys.argv[2])
+cong_alg = sys.argv[3]
+
+procs = [sh.Popen(shlex.split('./bin/server -t {} -p {}'.format(cong_alg, start_port + i))) for i in range(num_procs)]
 for p in procs:
     p.wait()
 
